@@ -156,6 +156,17 @@
   .dot.now{border-style:solid;border-color:var(--rose)}
   .cam-hint{text-align:center;font-size:13px;color:var(--ink-soft);margin-top:8px}
 
+  /* ── adjust ─────────────────────────── */
+  .adjust-stage{
+    position:relative;border-radius:18px;overflow:hidden;touch-action:none;
+    border:3px solid var(--line);background:#2b2027;margin:0 auto;
+    box-shadow:0 10px 26px rgba(201,62,118,.18);
+  }
+  .adjust-stage canvas{display:block;width:100%;height:100%}
+  .zoom-row{display:flex;align-items:center;gap:10px;justify-content:center;margin:16px auto 2px;max-width:300px}
+  .zoom-row span{font-size:16px}
+  .zoom-row input[type=range]{flex:1;accent-color:var(--rose)}
+
   /* ── result ─────────────────────────── */
   .result-wrap{
     display:flex;justify-content:center;margin-top:6px;
@@ -218,6 +229,22 @@
     </div>
   </section>
 
+  <!-- 2.5 사진 위치 조정 화면 -->
+  <section id="scr-adjust" class="screen">
+    <div class="step-label" id="adjust-title">사진 위치를 맞춰주세요 ♡</div>
+    <div class="adjust-stage" id="adjust-stage"><canvas id="adjust-canvas"></canvas></div>
+    <div class="zoom-row">
+      <span>🔍−</span>
+      <input type="range" id="zoom-slider" min="100" max="300" value="100">
+      <span>🔍+</span>
+    </div>
+    <div class="cam-hint">드래그해서 옮기고, 슬라이더로 확대/축소하세요</div>
+    <div class="btn-row">
+      <button class="btn ghost" id="btn-adjust-prev">← 이전 사진</button>
+      <button class="btn" id="btn-adjust-next">다음 사진 →</button>
+    </div>
+  </section>
+
   <!-- 3. 결과 화면 -->
   <section id="scr-result" class="screen">
     <div class="step-label">3. 완성! 공주님의 네컷 ♡</div>
@@ -248,7 +275,7 @@ let mode = null;        // 'camera' | 'upload'
 const frameImgs = {};   // decoded frame Image cache
 
 const $ = id => document.getElementById(id);
-const screens = {start:$('scr-start'), cam:$('scr-cam'), result:$('scr-result')};
+const screens = {start:$('scr-start'), cam:$('scr-cam'), adjust:$('scr-adjust'), result:$('scr-result')};
 function show(name){
   Object.values(screens).forEach(s=>s.classList.remove('on'));
   screens[name].classList.add('on');
@@ -302,7 +329,7 @@ $('file-input').onchange = async e=>{
   photos.forEach(p=>p._mirror=false);
   mode='upload';
   e.target.value='';
-  goResult();
+  goAdjust();
 };
 
 /* ── camera flow ── */
@@ -392,7 +419,7 @@ function keepShot(){
     photos[shotIdx]=im;
     shotIdx++;
     const n=FRAMES[selKey].slots.length;
-    if(shotIdx>=n){ stopCam(); goResult(); }
+    if(shotIdx>=n){ stopCam(); goAdjust(); }
     else{ buildDots(); setCamUI('live'); }
   };
   im.src=prevCv.toDataURL('image/png');
@@ -403,6 +430,103 @@ function stopCam(){
   video.srcObject=null;
 }
 function backToStart(){ mixpanel.track('Back To Start Click', {frame: selKey}); stopCam(); show('start'); }
+
+/* ── 2.5 adjust (zoom / pan per photo) ── */
+let adjustments = [];   // {scale, offX, offY} per slot, scale is a multiplier on top of cover-fit
+let adjustIdx = 0;
+const adjCanvas = $('adjust-canvas');
+const adjCtx = adjCanvas.getContext('2d');
+const zoomSlider = $('zoom-slider');
+
+function goAdjust(){
+  mixpanel.track('Adjust Screen View', {frame: selKey, mode});
+  adjustIdx = 0;
+  adjustments = FRAMES[selKey].slots.map(()=>({scale:1, offX:0, offY:0}));
+  show('adjust');
+  renderAdjustStep();
+}
+
+function slotFit(i){
+  const p = photos[i];
+  const [,,w,h] = FRAMES[selKey].slots[i];
+  const baseScale = Math.max(w/p.naturalWidth, h/p.naturalHeight);
+  const scale = baseScale * adjustments[i].scale;
+  return {w, h, dw:p.naturalWidth*scale, dh:p.naturalHeight*scale};
+}
+
+function clampAdjust(i){
+  const {w,h,dw,dh} = slotFit(i);
+  const adj = adjustments[i];
+  const maxOffX = Math.max(0,(dw-w)/2), maxOffY = Math.max(0,(dh-h)/2);
+  adj.offX = Math.max(-maxOffX, Math.min(maxOffX, adj.offX));
+  adj.offY = Math.max(-maxOffY, Math.min(maxOffY, adj.offY));
+}
+
+function drawAdjustCanvas(){
+  const p = photos[adjustIdx];
+  const {w,h,dw,dh} = slotFit(adjustIdx);
+  const adj = adjustments[adjustIdx];
+  adjCtx.clearRect(0,0,w,h);
+  adjCtx.save();
+  adjCtx.beginPath(); adjCtx.rect(0,0,w,h); adjCtx.clip();
+  adjCtx.drawImage(p, (w-dw)/2+adj.offX, (h-dh)/2+adj.offY, dw, dh);
+  adjCtx.restore();
+}
+
+function renderAdjustStep(){
+  const n = FRAMES[selKey].slots.length;
+  const [,,w,h] = FRAMES[selKey].slots[adjustIdx];
+  const stage = $('adjust-stage');
+  const maxW = Math.min(320, window.innerWidth-56);
+  const maxH = window.innerHeight*0.5;
+  let dispW = maxW, dispH = dispW*(h/w);
+  if(dispH>maxH){ dispH=maxH; dispW=dispH*(w/h); }
+  stage.style.width = dispW+'px';
+  stage.style.height = dispH+'px';
+  adjCanvas.width = w; adjCanvas.height = h;
+  $('adjust-title').textContent = `사진 위치를 맞춰주세요 (${adjustIdx+1}/${n}) ♡`;
+  $('btn-adjust-prev').disabled = adjustIdx===0;
+  $('btn-adjust-next').textContent = adjustIdx===n-1 ? '완성하기 ♡' : '다음 사진 →';
+  zoomSlider.value = Math.round(adjustments[adjustIdx].scale*100);
+  drawAdjustCanvas();
+}
+
+let dragging=false, dragX=0, dragY=0;
+adjCanvas.addEventListener('pointerdown', e=>{
+  dragging=true; dragX=e.clientX; dragY=e.clientY;
+  adjCanvas.setPointerCapture(e.pointerId);
+});
+adjCanvas.addEventListener('pointermove', e=>{
+  if(!dragging) return;
+  const rect = adjCanvas.getBoundingClientRect();
+  const ratio = adjCanvas.width/rect.width;
+  const dx=(e.clientX-dragX)*ratio, dy=(e.clientY-dragY)*ratio;
+  dragX=e.clientX; dragY=e.clientY;
+  const adj = adjustments[adjustIdx];
+  adj.offX += dx; adj.offY += dy;
+  clampAdjust(adjustIdx);
+  drawAdjustCanvas();
+});
+adjCanvas.addEventListener('pointerup', ()=>dragging=false);
+adjCanvas.addEventListener('pointercancel', ()=>dragging=false);
+
+zoomSlider.oninput = ()=>{
+  adjustments[adjustIdx].scale = zoomSlider.value/100;
+  clampAdjust(adjustIdx);
+  drawAdjustCanvas();
+};
+
+$('btn-adjust-prev').onclick = ()=>{
+  if(adjustIdx===0) return;
+  mixpanel.track('Adjust Prev Click', {frame: selKey, step: adjustIdx});
+  adjustIdx--; renderAdjustStep();
+};
+$('btn-adjust-next').onclick = ()=>{
+  const n = FRAMES[selKey].slots.length;
+  mixpanel.track('Adjust Next Click', {frame: selKey, step: adjustIdx, isLast: adjustIdx===n-1});
+  if(adjustIdx < n-1){ adjustIdx++; renderAdjustStep(); }
+  else{ goResult(); }
+};
 
 /* ── 3. result composite ── */
 async function goResult(){
@@ -419,12 +543,13 @@ async function goResult(){
   f.slots.forEach((s,i)=>{
     const p=photos[i]; if(!p) return;
     const [x,y,w,h]=s;
-    // cover fit
-    const scale=Math.max(w/p.naturalWidth, h/p.naturalHeight);
+    const adj = adjustments[i] || {scale:1, offX:0, offY:0};
+    // cover fit + user zoom/pan adjustment
+    const scale=Math.max(w/p.naturalWidth, h/p.naturalHeight)*adj.scale;
     const dw=p.naturalWidth*scale, dh=p.naturalHeight*scale;
     ctx.save();
     ctx.beginPath(); ctx.rect(x,y,w,h); ctx.clip();
-    ctx.drawImage(p, x+(w-dw)/2, y+(h-dh)/2, dw, dh);
+    ctx.drawImage(p, x+(w-dw)/2+adj.offX, y+(h-dh)/2+adj.offY, dw, dh);
     ctx.restore();
   });
   ctx.drawImage(frameImg,0,0,f.w,f.h);
