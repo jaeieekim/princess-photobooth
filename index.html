@@ -159,7 +159,7 @@
   .dot{
     width:38px;height:38px;border-radius:12px;border:2px dashed var(--line);
     background:#fff;display:flex;align-items:center;justify-content:center;
-    font-size:13px;color:var(--ink-soft);overflow:hidden;
+    font-size:13px;color:var(--ink-soft);overflow:hidden;cursor:pointer;
   }
   .dot img{width:100%;height:100%;object-fit:cover}
   .dot.now{border-style:solid;border-color:var(--rose)}
@@ -192,7 +192,7 @@
   .heartbeat{display:inline-block;animation:hb 1s ease-in-out infinite;font-size:34px}
   @keyframes hb{0%,100%{transform:scale(1)}30%{transform:scale(1.25)}}
 
-  footer{font-size:11px;color:#D3A5BA;text-align:center;padding:10px 0 22px}
+  footer{font-size:11px;color:#D3A5BA;text-align:center;padding:20px 0 22px}
 
   @media (prefers-reduced-motion: reduce){
     *{animation:none!important;transition:none!important}
@@ -203,7 +203,7 @@
 <div class="app">
   <header>
     <h1><span class="spark">✦</span> 공주네컷 <span class="spark">✦</span></h1>
-    <div class="sub">프레임 고르고, 찰칵 — 나만의 스티커 사진</div>
+    <div class="sub">프레임 고르고, 찰칵 💖 나만의 공주 감성 네컷 완성 #오늘의공주</div>
     <div class="lace-rule"></div>
   </header>
 
@@ -242,6 +242,7 @@
   <!-- 2.5 사진 위치 조정 화면 -->
   <section id="scr-adjust" class="screen">
     <div class="step-label" id="adjust-title">사진 위치를 맞춰주세요 ♡</div>
+    <div class="shots" id="adjust-thumbs"></div>
     <div class="adjust-stage" id="adjust-stage"><canvas id="adjust-canvas"></canvas></div>
     <div class="zoom-row">
       <span>🔍−</span>
@@ -265,7 +266,7 @@
     <div class="making" id="making"><span class="heartbeat">💗</span><br>사진을 예쁘게 붙이는 중...</div>
     <div class="result-wrap"><canvas id="result" hidden></canvas></div>
     <div class="btn-row">
-      <button class="btn" id="btn-save">💾 Save</button>
+      <button class="btn" id="btn-save"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M4.5 19.5h15"/></svg> Save</button>
       <button class="btn ghost" id="btn-retake">↺ Retake</button>
       <button class="btn ghost" id="btn-home">🏠 처음으로</button>
     </div>
@@ -523,6 +524,22 @@ function drawAdjustCanvas(){
   adjCtx.restore();
 }
 
+function renderAdjustThumbs(){
+  const wrap = $('adjust-thumbs');
+  wrap.innerHTML='';
+  photos.forEach((p,i)=>{
+    const d=document.createElement('div');
+    d.className='dot'+(i===adjustIdx?' now':'');
+    if(p){
+      const im=document.createElement('img');
+      im.src=p.src;
+      d.appendChild(im);
+    }
+    d.onclick=()=>{ if(i!==adjustIdx){ adjustIdx=i; renderAdjustStep(); } };
+    wrap.appendChild(d);
+  });
+}
+
 function renderAdjustStep(){
   const n = FRAMES[selKey].slots.length;
   const [,,w,h] = FRAMES[selKey].slots[adjustIdx];
@@ -538,6 +555,7 @@ function renderAdjustStep(){
   $('btn-adjust-prev').disabled = adjustIdx===0;
   $('btn-adjust-next').textContent = adjustIdx===n-1 ? '완성하기 ♡' : '다음 사진 →';
   zoomSlider.value = Math.round(adjustments[adjustIdx].scale*100);
+  renderAdjustThumbs();
   drawAdjustCanvas();
 }
 
@@ -628,11 +646,24 @@ async function goResult(){
 
 $('btn-save').onclick=()=>{
   mixpanel.track('Save Click', {frame: selKey, mode});
-  const a=document.createElement('a');
   const t=new Date(), pad=n=>String(n).padStart(2,'0');
-  a.download=`공주네컷_${t.getFullYear()}${pad(t.getMonth()+1)}${pad(t.getDate())}_${pad(t.getHours())}${pad(t.getMinutes())}.png`;
-  a.href=$('result').toDataURL('image/png');
-  a.click();
+  const filename=`공주네컷_${t.getFullYear()}${pad(t.getMonth()+1)}${pad(t.getDate())}_${pad(t.getHours())}${pad(t.getMinutes())}.png`;
+
+  $('result').toBlob(async blob=>{
+    const file = new File([blob], filename, {type:'image/png'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      try{
+        await navigator.share({files:[file], title:'공주네컷'});
+        return;
+      }catch(err){
+        if(err.name==='AbortError') return;  // user cancelled the share sheet
+      }
+    }
+    const a=document.createElement('a');
+    a.download=filename;
+    a.href=URL.createObjectURL(blob);
+    a.click();
+  }, 'image/png');
 };
 
 $('btn-retake').onclick=()=>{
