@@ -240,9 +240,13 @@
     </div>
     <div class="cam-hint">드래그해서 옮기고, 슬라이더로 확대/축소하세요</div>
     <div class="btn-row">
+      <button class="btn ghost" id="btn-adjust-swap">🔄 사진 바꾸기</button>
+    </div>
+    <div class="btn-row">
       <button class="btn ghost" id="btn-adjust-prev">← 이전 사진</button>
       <button class="btn" id="btn-adjust-next">다음 사진 →</button>
     </div>
+    <input type="file" id="adjust-file-input" accept="image/*" hidden>
   </section>
 
   <!-- 3. 결과 화면 -->
@@ -514,6 +518,24 @@ zoomSlider.oninput = ()=>{
   adjustments[adjustIdx].scale = zoomSlider.value/100;
   clampAdjust(adjustIdx);
   drawAdjustCanvas();
+};
+
+$('btn-adjust-swap').onclick = ()=>{
+  mixpanel.track('Adjust Swap Photo Click', {frame: selKey, step: adjustIdx});
+  $('adjust-file-input').click();
+};
+$('adjust-file-input').onchange = e=>{
+  const file = e.target.files[0];
+  e.target.value = '';
+  if(!file) return;
+  const im = new Image();
+  im.onload = ()=>{
+    im._mirror = false;
+    photos[adjustIdx] = im;
+    adjustments[adjustIdx] = {scale:1, offX:0, offY:0};
+    renderAdjustStep();
+  };
+  im.src = URL.createObjectURL(file);
 };
 
 $('btn-adjust-prev').onclick = ()=>{
