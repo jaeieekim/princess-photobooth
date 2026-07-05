@@ -79,6 +79,15 @@
   }
 
   /* frame gallery */
+  .filter-chips{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:2px 0 14px}
+  .chip{
+    padding:7px 18px;border-radius:999px;border:2px solid var(--line);
+    background:#fff;color:var(--ink-soft);font-family:'Gaegu',cursive;font-size:17px;
+    cursor:pointer;transition:transform .12s ease,background .12s ease,color .12s ease;
+  }
+  .chip:active{transform:scale(.93)}
+  .chip.sel{background:var(--rose);border-color:var(--rose);color:#fff}
+
   .gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
   .frame-card{
     background:var(--card);border:2px solid var(--line);border-radius:22px;
@@ -201,6 +210,7 @@
   <!-- 1. 시작 화면 -->
   <section id="scr-start" class="screen on">
     <div class="step-label">1. 프레임을 골라주세요 ♡</div>
+    <div class="filter-chips" id="filter-chips"></div>
     <div class="gallery" id="gallery"></div>
     <div class="btn-row">
       <button class="btn ghost" id="btn-upload" disabled>🖼 사진 첨부</button>
@@ -288,9 +298,11 @@ function show(name){
 
 /* ── 1. gallery ── */
 const gallery = $('gallery');
+const cardEls = {};
 for(const [key,f] of Object.entries(FRAMES)){
   const card = document.createElement('div');
   card.className='frame-card';
+  card.dataset.cut = f.slots.length;
   card.innerHTML = `
     <span class="cut">${f.slots.length}컷</span>
     <div class="thumbwrap"><img src="${f.src}" alt="${f.title} 프레임"></div>
@@ -303,7 +315,41 @@ for(const [key,f] of Object.entries(FRAMES)){
     mixpanel.track('Frame Selected', {frame: key, title: f.title});
   };
   gallery.appendChild(card);
+  cardEls[key] = card;
 }
+
+/* ── 1.5 filter chips ── */
+const chipsEl = $('filter-chips');
+const cutCounts = [...new Set(Object.values(FRAMES).map(f=>f.slots.length))].sort((a,b)=>a-b);
+let activeFilter = 'all';
+
+function applyFilter(){
+  for(const [key,f] of Object.entries(FRAMES)){
+    cardEls[key].style.display = (activeFilter==='all' || f.slots.length===activeFilter) ? '' : 'none';
+  }
+  if(selKey && cardEls[selKey].style.display==='none'){
+    selKey = null;
+    document.querySelectorAll('.frame-card').forEach(c=>c.classList.remove('sel'));
+    $('btn-upload').disabled = $('btn-shoot').disabled = true;
+  }
+}
+function renderChips(){
+  chipsEl.innerHTML='';
+  const makeChip = (label, val)=>{
+    const b=document.createElement('button');
+    b.className='chip'+(activeFilter===val?' sel':'');
+    b.textContent=label;
+    b.onclick=()=>{
+      activeFilter=val;
+      mixpanel.track('Frame Filter Click', {filter: String(val)});
+      renderChips(); applyFilter();
+    };
+    chipsEl.appendChild(b);
+  };
+  makeChip('전체','all');
+  cutCounts.forEach(c=>makeChip(`${c}컷`, c));
+}
+renderChips();
 
 /* ── frame image cache ── */
 function getFrameImg(key){
